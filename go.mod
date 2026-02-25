@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/ethereum/go-ethereum v1.17.0
+	github.com/getsentry/sentry-go v0.40.0
 	github.com/google/uuid v1.6.0
 	github.com/kawai-network/contracts v0.1.3
 	github.com/kawai-network/x v1.0.20
