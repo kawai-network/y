@@ -8,7 +8,7 @@ require (
 	github.com/getsentry/sentry-go v0.40.0
 	github.com/google/uuid v1.6.0
 	github.com/kawai-network/contracts v0.1.3
-	github.com/kawai-network/x v1.0.20
+	github.com/kawai-network/x v1.0.22
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.39.0
