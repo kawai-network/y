@@ -21,9 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 
+	"github.com/kawai-network/contracts"
 	bleve "github.com/kawai-network/y/jarvis/bleve"
 	jarviscommon "github.com/kawai-network/y/jarvis/common"
-	"github.com/kawai-network/contracts"
 	db "github.com/kawai-network/y/jarvis/db"
 	"github.com/kawai-network/y/jarvis/networks"
 	"github.com/kawai-network/y/jarvis/util/broadcaster"
@@ -47,6 +47,18 @@ const (
 	MONAD_TESTNET_NODE_VAR    string = "MONAD_TESTNET_NODE"
 	ETHERSCAN_API_KEY_VAR     string = "ETHERSCAN_API_KEY"
 	BSCSCAN_API_KEY_VAR       string = "BSCSCAN_API_KEY"
+
+	COINGECKO_API_URL string = "https://api.coingecko.com/api/v3"
+)
+
+var (
+	regexTxHash         = regexp.MustCompile("(0x)?[0-9a-fA-F]{64}")
+	regexAddress        = regexp.MustCompile("0x[0-9a-fA-F]{40}([^0-9a-fA-F]|$)")
+	regexAddressOrEmpty = regexp.MustCompile("(0x)?[0-9a-fA-F]{40}")
+
+	httpClient = &http.Client{
+		Timeout: 10 * time.Second,
+	}
 )
 
 func CalculateTimeDurationFromBlock(network networks.Network, from, to uint64) time.Duration {
@@ -160,8 +172,7 @@ func ValueToAmountAndCurrency(value string) (string, string, error) {
 }
 
 func ScanForTxs(para string) []string {
-	re := regexp.MustCompile("(0x)?[0-9a-fA-F]{64}")
-	result := re.FindAllString(para, -1)
+	result := regexTxHash.FindAllString(para, -1)
 	if result == nil {
 		return []string{}
 	}
@@ -169,8 +180,7 @@ func ScanForTxs(para string) []string {
 }
 
 func ScanForAddresses(para string) []string {
-	re := regexp.MustCompile("0x[0-9a-fA-F]{40}([^0-9a-fA-F]|$)")
-	result := re.FindAllString(para, -1)
+	result := regexAddress.FindAllString(para, -1)
 	if result == nil {
 		return []string{}
 	}
@@ -186,8 +196,7 @@ func IsAddress(addr string) bool {
 }
 
 func PathToAddress(path string) (string, error) {
-	re := regexp.MustCompile("(0x)?[0-9a-fA-F]{40}")
-	result := re.FindAllString(path, -1)
+	result := regexAddressOrEmpty.FindAllString(path, -1)
 	if result == nil {
 		return "", fmt.Errorf("invalid filename")
 	}
@@ -466,26 +475,23 @@ func GetCoinGeckoRateInUSD(network networks.Network, token string) (float64, err
 }
 
 func GetCoinGeckoRateInUSDOnPlatform(platform string, token string) (float64, error) {
-	if strings.ToLower(token) == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" {
+	if strings.ToLower(token) == ETH_ADDR {
 		nativeCoinID := getCoinGeckoNativeCoinID(platform)
 		return GetCoinGeckoSimplePrice(nativeCoinID)
 	}
 
 	url := fmt.Sprintf(
-		"https://api.coingecko.com/api/v3/simple/token_price/%s?contract_addresses=%s&vs_currencies=USD&include_market_cap=false&include_24hr_vol=false&include_24hr_change=false&include_last_updated_at=false",
+		"%s/simple/token_price/%s?contract_addresses=%s&vs_currencies=USD&include_market_cap=false&include_24hr_vol=false&include_24hr_change=false&include_last_updated_at=false",
+		COINGECKO_API_URL,
 		platform,
 		token,
 	)
 
-	resp, err := http.Get(url)
+	body, err := fetchURL(url)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
+
 	priceres := coingeckopriceresponse{}
 	err = json.Unmarshal(body, &priceres)
 	if err != nil {
@@ -502,8 +508,6 @@ func GetCoinGeckoRateInUSDOnPlatform(platform string, token string) (float64, er
 	return usdPrice, nil
 }
 
-// getCoinGeckoNativeCoinID maps the platform ID (used for token lookups)
-// to the native coin ID (used for simple/price lookups)
 func getCoinGeckoNativeCoinID(platformID string) string {
 	switch platformID {
 	case "ethereum":
@@ -517,29 +521,26 @@ func getCoinGeckoNativeCoinID(platformID string) string {
 	case "avalanche":
 		return "avalanche-2"
 	case "optimistic-ethereum", "arbitrum-one", "base", "scroll", "linea", "zksync":
-		return "ethereum" // Layer 2s usually use ETH
+		return "ethereum"
 	case "monad":
 		return "monad"
 	default:
-		// Fallback: assume the platform ID might be the coin ID (works for solana, etc.)
 		return platformID
 	}
 }
 
 func GetCoinGeckoSimplePrice(coinID string) (float64, error) {
 	url := fmt.Sprintf(
-		"https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd&include_market_cap=false&include_24hr_vol=false&include_24hr_change=false&include_last_updated_at=false",
+		"%s/simple/price?ids=%s&vs_currencies=usd&include_market_cap=false&include_24hr_vol=false&include_24hr_change=false&include_last_updated_at=false",
+		COINGECKO_API_URL,
 		coinID,
 	)
-	resp, err := http.Get(url)
+
+	body, err := fetchURL(url)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
+
 	priceres := coingeckopriceresponse{}
 	err = json.Unmarshal(body, &priceres)
 	if err != nil {
@@ -551,6 +552,15 @@ func GetCoinGeckoSimplePrice(coinID string) (float64, error) {
 		return 0, fmt.Errorf("price for %s not found in coingecko response", coinID)
 	}
 	return price, nil
+}
+
+func fetchURL(url string) ([]byte, error) {
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 func GetETHPriceInUSD() (float64, error) {
@@ -583,12 +593,7 @@ func GetABIStringFromFile(filepath string) (string, error) {
 }
 
 func GetABIStringFromURL(url string) (string, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := fetchURL(url)
 	return string(body), err
 }
 
