@@ -1,0 +1,61 @@
+name: Auto Tag On Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: auto-tag-main-master
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Compute next tag
+        id: next
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_tag="$(git tag --list 'v*.*.*' | sort -V | tail -n1)"
+          if [[ -z "${current_tag}" ]]; then
+            next_tag="v0.1.0"
+          else
+            version="${current_tag#v}"
+            IFS='.' read -r major minor patch <<< "${version}"
+            next_tag="v${major}.${minor}.$((patch + 1))"
+          fi
+
+          echo "current_tag=${current_tag}" >> "$GITHUB_OUTPUT"
+          echo "next_tag=${next_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        env:
+          NEXT_TAG: ${{ steps.next.outputs.next_tag }}
+        run: |
+          if git tag -l "${NEXT_TAG}" | grep -q "${NEXT_TAG}"; then
+            echo "Tag ${NEXT_TAG} already exists; skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${NEXT_TAG}" -m "Release ${NEXT_TAG}"
+          git push origin "${NEXT_TAG}"
