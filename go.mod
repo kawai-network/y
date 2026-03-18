@@ -7,7 +7,8 @@ require (
 	github.com/getsentry/sentry-go v0.40.0
 	github.com/kawai-network/contracts v0.1.3
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.40.0
+	golang.org/x/sys v0.41.0
+	golang.org/x/term v0.40.0
 )
 
 require (
